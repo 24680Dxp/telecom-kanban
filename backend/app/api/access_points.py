@@ -7,8 +7,15 @@ from app.schemas import (
     AccessPointCreate, AccessPointUpdate, AccessPointMove,
     AccessPointResponse, ImportResult,
 )
+from app.models import Stage
+from pydantic import BaseModel
 import openpyxl
+import re
 import io
+
+
+class TextParseRequest(BaseModel):
+    text: str
 
 router = APIRouter()
 
@@ -128,6 +135,105 @@ def upload_access_points(
         db.add(ap)
         seen_names.add(name)
         imported += 1
+
+    db.commit()
+    return ImportResult(imported=imported, skipped=skipped, skipped_details=skipped_details[:20])
+
+
+@router.post("/projects/{project_id}/access-points/parse-text", response_model=ImportResult)
+def parse_text_report(project_id: int, data: TextParseRequest, db: Session = Depends(get_db)):
+    """解析自由文本进度汇报，自动创建接入点并分配到对应阶段"""
+    text = data.text
+    imported = 0
+    skipped = 0
+    skipped_details = []
+
+    existing_names = {
+        ap.name for ap in db.query(AccessPoint).filter(AccessPoint.project_id == project_id).all()
+    }
+    stages = {s.name: s for s in db.query(Stage).filter(Stage.project_id == project_id).all()}
+
+    # 按 -- 拆分各阶段
+    parts = re.split(r'--|——', text)
+
+    for part in parts:
+        # 提取阶段名和接入点列表
+        m = re.search(r'[①②③④⑤⑥⑦⑧⑨⑩](\S+?)（\d+个）[：:](.+)', part)
+        if not m:
+            continue
+
+        stage_name = m.group(1).strip()
+        ap_text = m.group(2).strip().rstrip('。')
+
+        # 查找或创建阶段
+        stage = stages.get(stage_name)
+        if not stage:
+            # 尝试模糊匹配
+            for sname, s in stages.items():
+                if stage_name in sname or sname in stage_name:
+                    stage = s
+                    break
+        if not stage:
+            # 创建新阶段
+            max_order = max((s.sort_order for s in stages.values()), default=-1)
+            is_bottleneck = 1 if '瓶颈' in stage_name else 0
+            color = '#ff4d4f' if is_bottleneck else '#1890ff'
+            stage = Stage(
+                project_id=project_id, name=stage_name,
+                sort_order=max_order + 1, is_bottleneck=is_bottleneck, color=color,
+            )
+            db.add(stage)
+            db.flush()
+            stages[stage_name] = stage
+
+        # 解析接入点名称
+        # 用 、 或 ）结尾来拆分
+        # 格式：名称1（备注）、名称2、名称3（备注）。
+        ap_names = []
+        current = ''
+        depth = 0
+        for ch in ap_text:
+            if ch == '（' or ch == '(':
+                depth += 1
+            elif ch == '）' or ch == ')':
+                depth -= 1
+            elif ch in ('、', '。', '，') and depth == 0:
+                name = current.strip()
+                # 提取纯名称（去掉后面的括号备注作为地址）
+                addr = ''
+                m2 = re.match(r'^(.+?)（(.+?)）$', name)
+                if m2:
+                    name = m2.group(1).strip()
+                    addr = m2.group(2).strip()
+                if name and name not in ('个', ''):
+                    ap_names.append((name, addr))
+                current = ''
+                continue
+            current += ch
+
+        # 最后一个
+        name = current.strip()
+        addr = ''
+        m2 = re.match(r'^(.+?)（(.+?)）$', name)
+        if m2:
+            name = m2.group(1).strip()
+            addr = m2.group(2).strip()
+        if name and name not in ('个', ''):
+            ap_names.append((name, addr))
+
+        # 批量创建
+        for ap_name, ap_addr in ap_names:
+            if ap_name in existing_names:
+                skipped += 1
+                skipped_details.append(f"{ap_name}（已存在）")
+                continue
+            ap = AccessPoint(
+                project_id=project_id, stage_id=stage.id,
+                name=ap_name, address=ap_addr,
+            )
+            db.add(ap)
+            existing_names.add(ap_name)
+            imported += 1
 
     db.commit()
     return ImportResult(imported=imported, skipped=skipped, skipped_details=skipped_details[:20])

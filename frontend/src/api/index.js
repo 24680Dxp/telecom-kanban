@@ -36,3 +36,5 @@ export const uploadAccessPoints = (projectId, file) => {
     timeout: 60000,
   }).then(r => r.data)
 }
+export const parseTextReport = (projectId, text) =>
+  api.post(`/projects/${projectId}/access-points/parse-text`, { text }).then(r => r.data)
