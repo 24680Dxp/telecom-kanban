@@ -1,4 +1,4 @@
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel
 from typing import Optional, List
 from datetime import datetime
 
@@ -15,8 +15,8 @@ class ProjectUpdate(BaseModel):
 
 
 class ProjectResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
+    class Config:
+        orm_mode = True
     id: int
     name: str
     description: str
@@ -26,6 +26,8 @@ class ProjectResponse(BaseModel):
 
 
 class ProjectDetailResponse(ProjectResponse):
+    class Config:
+        orm_mode = True
     stages: List["StageResponse"] = []
 
 
@@ -54,8 +56,8 @@ class StageReorderRequest(BaseModel):
 
 
 class StageResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
+    class Config:
+        orm_mode = True
     id: int
     project_id: int
     name: str
@@ -86,8 +88,8 @@ class AccessPointMove(BaseModel):
 
 
 class AccessPointResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
+    class Config:
+        orm_mode = True
     id: int
     project_id: int
     stage_id: Optional[int] = None
@@ -103,3 +105,5 @@ class ImportResult(BaseModel):
     imported: int
     skipped: int
     skipped_details: List[str] = []
+
+ProjectDetailResponse.update_forward_refs()

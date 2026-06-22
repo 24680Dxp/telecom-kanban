@@ -27,7 +27,7 @@ def list_access_points(
 
 @router.post("/access-points", response_model=AccessPointResponse)
 def create_access_point(data: AccessPointCreate, db: Session = Depends(get_db)):
-    ap = AccessPoint(**data.model_dump())
+    ap = AccessPoint(**data.dict())
     db.add(ap)
     db.commit()
     db.refresh(ap)
@@ -39,7 +39,7 @@ def update_access_point(ap_id: int, data: AccessPointUpdate, db: Session = Depen
     ap = db.query(AccessPoint).filter(AccessPoint.id == ap_id).first()
     if not ap:
         raise HTTPException(status_code=404, detail="接入点不存在")
-    update_data = data.model_dump(exclude_unset=True)
+    update_data = data.dict(exclude_unset=True)
     for key, value in update_data.items():
         setattr(ap, key, value)
     db.commit()

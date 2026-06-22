@@ -37,7 +37,7 @@ def list_stages(project_id: int, db: Session = Depends(get_db)):
 
 @router.post("/projects/{project_id}/stages", response_model=StageResponse)
 def create_stage(project_id: int, data: StageCreate, db: Session = Depends(get_db)):
-    stage = Stage(project_id=project_id, **data.model_dump())
+    stage = Stage(project_id=project_id, **data.dict())
     db.add(stage)
     db.commit()
     db.refresh(stage)
@@ -49,7 +49,7 @@ def update_stage(stage_id: int, data: StageUpdate, db: Session = Depends(get_db)
     stage = db.query(Stage).filter(Stage.id == stage_id).first()
     if not stage:
         raise HTTPException(status_code=404, detail="阶段不存在")
-    update_data = data.model_dump(exclude_unset=True)
+    update_data = data.dict(exclude_unset=True)
     for key, value in update_data.items():
         setattr(stage, key, value)
     db.commit()
